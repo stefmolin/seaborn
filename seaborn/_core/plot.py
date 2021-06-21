@@ -60,6 +60,9 @@ class Plot:
         }
 
         # TODO is using "unknown" here the best approach?
+        # Other options would be:
+        # - None as the value for type
+        # - some sort of uninitialized singleton for the object,
         self._scales = {
             "x": ScaleWrapper(mpl.scale.LinearScale("x"), "unknown"),
             "y": ScaleWrapper(mpl.scale.LinearScale("y"), "unknown"),
@@ -76,7 +79,7 @@ class Plot:
         self,
         mark: Mark,
         stat: Stat | None = None,
-        orient: Literal["x", "y", "v", "h"] = "x",
+        orient: Literal["x", "y", "v", "h"] = "x",  # TODO "auto" as defined by Mark?
         data: DataSource = None,
         **variables: VariableSpec,
     ) -> Plot:
@@ -92,8 +95,14 @@ class Plot:
         layer_variables = None if not variables else variables
         layer_data = self._data.concat(data, layer_variables)
 
-        if stat is None:  # TODO do we need some way to say "do no stat transformation"?
-            stat = mark.default_stat
+        if stat is None and mark.default_stat is not None:
+            # TODO We need some way to say "do no stat transformation" that is different
+            # from "use the default". That's basically an IdentityStat.
+
+            # Default stat needs to be initialized here so that its state is
+            # not modified across multiple plots. If a Mark wants to define a default
+            # stat with non-default params, it should use functools.partial
+            stat = mark.default_stat()
 
         orient_map = {"v": "x", "h": "y"}
         orient = orient_map.get(orient, orient)  # type: ignore  # mypy false positive?
@@ -557,6 +566,12 @@ class Plot:
 
                 sub_vars = dict(zip(grouping_vars, key))
 
+                # TODO I think we need to be able to drop the faceting vars
+                # from a layer and get the same plot on each axes. This is
+                # currently not possible. It's going to be tricky because it
+                # will require decoupling the iteration over subsets from iteration
+                # over facets.
+
                 # TODO can we use axes_map here?
                 use_ax: Axes
                 if facets is None:
@@ -584,6 +599,7 @@ class Plot:
         # make sense to specify whether or not to use pyplot at the initial Plot().
         # Keep an eye on whether matplotlib implements "attaching" an existing
         # figure to pyplot: https://github.com/matplotlib/matplotlib/pull/14024
+        # TODO pass kwargs (block, etc.)
         import matplotlib.pyplot as plt
         self.plot()
         plt.show()
