@@ -185,12 +185,24 @@ class Plot:
         **kwargs
     ) -> Plot:
 
+        # TODO XXX FIXME matplotlib scales sometimes default to
+        # filling invalid outputs with large out of scale numbers
+        # (e.g. default behavior for LogScale is 0 -> -10000)
+        # This will cause MAJOR PROBLEMS for statistical transformations
+        # Solution? I think it's fine to special-case scale="log" in
+        # Plot.scale_numeric and force `nonpositive="mask"` and remove
+        # NAs after scaling (cf GH2454).
+        # And then add a warning in the docstring that the users must
+        # ensure that ScaleBase derivatives mask out of bounds data
+
         # TODO use norm for setting axis limits? Or otherwise share an interface?
 
         # TODO or separate norm as a Normalize object and limits as a tuple?
         # (If we have one we can create the other)
 
-        scale = mpl.scale.scale_factory(scale, var, **kwargs)
+        if isinstance(scale, str):
+            scale = mpl.scale.scale_factory(scale, var, **kwargs)
+
         if norm is None:
             # TODO what about when we want to infer the scale from the norm?
             # e.g. currently you pass LogNorm to get a log normalization...
@@ -447,10 +459,6 @@ class Plot:
             grouped = coord_df.groupby(axes_map, sort=False)
             for ax, ax_df in grouped:
                 self._scale_coords_single(ax_df, out_df, ax)
-
-        # TODO do we need to handle nas again, e.g. if negative values
-        # went into a log transform?
-        # cf GH2454
 
         return out_df
 
