@@ -209,6 +209,8 @@ class Plot:
         # TODO or separate norm as a Normalize object and limits as a tuple?
         # (If we have one we can create the other)
 
+        # TODO expose parameter for internal dtype achieved during scale.cast?
+
         if isinstance(scale, str):
             scale = mpl.scale.scale_factory(scale, var, **kwargs)
 
@@ -300,6 +302,8 @@ class Plot:
         # we are not sharing axes ... e.g. we currently can't use displot to
         # show all histograms if some of those histograms need to be categorical.
         # We can decide how much of a problem we are going to consider that to be...
+        # It may be better to implement to PairGrid like functionality within Plot
+        # and then that can be the "correct" way to mix scales across a figure.
 
         layers = self._layers
         for var, scale in self._scales.items():

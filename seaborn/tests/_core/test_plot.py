@@ -1,6 +1,8 @@
 import functools
 import pandas as pd
+import matplotlib as mpl
 
+import pytest
 from pandas.testing import assert_frame_equal, assert_series_equal
 
 from seaborn._core.plot import Plot
@@ -19,7 +21,18 @@ class MockMark(Mark):
 
     default_stat = MockStat
 
-    pass
+    def __init__(self, *args, **kwargs):
+
+        super().__init__(*args, **kwargs)
+        self.passed_keys = []
+        self.passed_data = []
+        self.passed_axs = []
+
+    def _plot_split(self, keys, data, ax, mappings, kws):
+
+        self.passed_keys.append(keys)
+        self.passed_data.append(data)
+        self.passed_axs.append(ax)
 
 
 class TestPlot:
@@ -151,3 +164,72 @@ class TestPlot:
         p = Plot().add(MockMark(), OtherMockStat())
         layer, = p._layers
         assert layer.stat.__class__ is OtherMockStat
+
+    def test_axis_scale_inference(self, long_df):
+
+        for col, scale_type in zip("zat", ["numeric", "categorical", "datetime"]):
+            p = Plot(long_df, x=col, y=col).add(MockMark())
+            for var in "xy":
+                assert p._scales[var].type == "unknown"
+            p._setup_scales()
+            for var in "xy":
+                assert p._scales[var].type == scale_type
+
+    def test_axis_scale_inference_concatenates(self):
+
+        p = Plot(x=[1, 2, 3]).add(MockMark(), x=["a", "b", "c"])
+        p._setup_scales()
+        assert p._scales["x"].type == "categorical"
+
+    def test_axis_scale_numeric_as_categorical(self):
+
+        p = Plot(x=[1, 2, 3]).scale_categorical("x", order=[2, 1, 3])
+        scl = p._scales["x"]
+        assert scl.type == "categorical"
+        assert scl.cast(pd.Series([2, 1, 3])).cat.codes.to_list() == [0, 1, 2]
+
+    def test_axis_scale_numeric_as_datetime(self):
+
+        p = Plot(x=[1, 2, 3]).scale_datetime("x")
+        scl = p._scales["x"]
+        assert scl.type == "datetime"
+
+        numbers = [2, 1, 3]
+        dates = ["1970-01-03", "1970-01-02", "1970-01-04"]
+        assert_series_equal(
+            scl.cast(pd.Series(numbers)),
+            pd.Series(dates, dtype="datetime64[ns]")
+        )
+
+    @pytest.mark.xfail
+    def test_axis_scale_categorical_as_numeric(self):
+
+        # TODO marked as expected fail because we have not implemented this yet
+        # see notes in ScaleWrapper.cast
+
+        strings = ["2", "1", "3"]
+        p = Plot(x=strings).scale_numeric("x")
+        scl = p._scales["x"]
+        assert scl.type == "numeric"
+        assert_series_equal(
+            scl.cast(pd.Series(strings)),
+            pd.Series(strings).astype(float)
+        )
+
+    def test_axis_scale_categorical_as_datetime(self):
+
+        dates = ["1970-01-03", "1970-01-02", "1970-01-04"]
+        p = Plot(x=dates).scale_datetime("x")
+        scl = p._scales["x"]
+        assert scl.type == "datetime"
+        assert_series_equal(
+            scl.cast(pd.Series(dates, dtype=object)),
+            pd.Series(dates, dtype="datetime64[ns]")
+        )
+
+    def test_figure_setup_creates_matplotlib_objects(self):
+
+        p = Plot()
+        p._setup_figure()
+        assert isinstance(p._figure, mpl.figure.Figure)
+        assert isinstance(p._ax, mpl.axes.Axes)
