@@ -15,7 +15,7 @@ class Mark:
     """Base class for objects that control the actual plotting."""
     # TODO where to define vars we always group by (col, row, group)
     default_stat: Optional[Stat] = None
-    grouping_vars: list[str]
+    grouping_vars: list[str] = []
     orient: Literal["x", "y"]
     requires: list[str]  # List of variabes that must be defined
     supports: list[str]  # List of variables that will be used
