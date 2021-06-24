@@ -72,6 +72,14 @@ class Plot:
 
         # TODO  Provisional name for a method that accepts an existing Axes object,
         # and possibly one that does all of the figure/subplot configuration
+
+        # We should also accept an existing figure object. This will be most useful
+        # in cases where users have created a *sub*figure ... it will let them facet
+        # etc. within an existing, larger figure. We still have the issue with putting
+        # the legend outside of the plot and that potentially causing problems for that
+        # larger figure. Not sure what to do about that. I suppose existing figure could
+        # disabling legend_out.
+
         raise NotImplementedError()
         return self
 
@@ -113,6 +121,32 @@ class Plot:
         self._layers.append(Layer(layer_data, mark, stat))
 
         return self
+
+    def _facet(
+        self,
+        dim: Literal["row", "col"],
+        var: VariableSpec = None,
+        order: Series | Index | Iterable | None = None,  # TODO alias?
+        wrap: int | None = None,
+        share: bool | Literal["row", "col"] = True,
+        data: DataSource = None,
+    ):
+
+        # TODO how to encode the data for this variable?
+
+        # TODO: an issue: `share` is ambiguous because you could configure
+        # sharing of both axes for a single dimensional facet. But if we
+        # have sharex/sharey in both facet_rows and facet_cols, we will have
+        # to handle potentially conflicting specifications. We could also put
+        # sharex/sharey in the figure configuration function defaulting to True
+        # since without facets, that has no real effect, except we need to
+        # sort out how to combine that with the pairgrid functionality.
+
+        self._facetspec[dim] = {
+            "order": order,
+            "wrap": wrap,
+            "share": share,
+        }
 
     # TODO should we have facet_col(var, order, wrap)/facet_row(...)?
     # TODO or facet(dim, var, ...)
@@ -353,6 +387,24 @@ class Plot:
             self._figure = mpl.figure.Figure()
             self._ax = self._figure.add_subplot()
             self._facets = None
+
+        # TODO we need a new approach here. I think that a flat list of axes
+        # objects should be the primary (and possibly only) interface between
+        # Plot and the matplotlib Axes it's using. (Possibly the data structure
+        # can be list-like with some useful embellishments). We'll handle all
+        # the complicated business of setting up a potentially faceted / wrapped
+        # / paired figure upstream of that, and downstream will just have the
+        # list of Axes.
+        #
+        # That means we will need some way to map between axes and views on the
+        # data (rows for facets and columns for pairs). Then when we are
+        # plotting, we will first loop over the axes list, then select the data
+        # for each axes, rather than looping over data subsets and finding the
+        # corresponding axes. This will let us solve the problem of showing the
+        # same plot on all facets. It will also be cleaner.
+        #
+        # I don't know if we want to package all of the figure setup and mapping
+        # between data and axes logic in Plot or if that deserves a separate classs.
 
         axes_list = list(self._facets.axes.flat) if self._ax is None else [self._ax]
         for ax in axes_list:
