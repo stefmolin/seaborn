@@ -370,3 +370,14 @@ class TestPlotData:
 
         assert_vector_equal(p2.frame.loc[d2.index, var], d2[k2])
         assert p2.frame.loc[d1.index.difference(d2.index), var].isna().all()
+
+    def test_concat_subset_data_inherit_variables(self, long_df):
+
+        sub_df = long_df[long_df["a"] == "b"]
+
+        var = "y"
+        p1 = PlotData(long_df, {var: var})
+        p2 = p1.concat(sub_df, None)
+
+        assert_vector_equal(p2.frame.loc[sub_df.index, var], sub_df[var])
+        assert p2.frame.loc[long_df.index.difference(sub_df.index), var].isna().all()
