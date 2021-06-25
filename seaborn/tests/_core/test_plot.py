@@ -6,6 +6,7 @@ import pytest
 from pandas.testing import assert_frame_equal, assert_series_equal
 
 from seaborn._core.plot import Plot
+from seaborn._core.rules import categorical_order
 from seaborn._marks.base import Mark
 from seaborn._stats.base import Stat
 
@@ -14,25 +15,31 @@ assert_vector_equal = functools.partial(assert_series_equal, check_names=False)
 
 class MockStat(Stat):
 
-    pass
+    def __call__(self, data):
+
+        return data
 
 
 class MockMark(Mark):
 
-    default_stat = MockStat
+    # TODO we need to sort out the stat application, it is broken right now
+    # default_stat = MockStat
+    grouping_vars = ["hue"]
 
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
         self.passed_keys = []
         self.passed_data = []
-        self.passed_axs = []
+        self.passed_axes = []
+        self.n_splits = 0
 
     def _plot_split(self, keys, data, ax, mappings, kws):
 
+        self.n_splits += 1
         self.passed_keys.append(keys)
         self.passed_data.append(data)
-        self.passed_axs.append(ax)
+        self.passed_axes.append(ax)
 
 
 class TestPlot:
@@ -152,16 +159,22 @@ class TestPlot:
 
     def test_add_stat_default(self):
 
-        p = Plot().add(MockMark())
+        class MarkWithDefaultStat(Mark):
+            default_stat = MockStat
+
+        p = Plot().add(MarkWithDefaultStat())
         layer, = p._layers
         assert layer.stat.__class__ is MockStat
 
     def test_add_stat_nondefault(self):
 
+        class MarkWithDefaultStat(Mark):
+            default_stat = MockStat
+
         class OtherMockStat(MockStat):
             pass
 
-        p = Plot().add(MockMark(), OtherMockStat())
+        p = Plot().add(MarkWithDefaultStat(), OtherMockStat())
         layer, = p._layers
         assert layer.stat.__class__ is OtherMockStat
 
@@ -233,3 +246,58 @@ class TestPlot:
         p._setup_figure()
         assert isinstance(p._figure, mpl.figure.Figure)
         assert isinstance(p._ax, mpl.axes.Axes)
+
+    def test_empty_plot(self):
+
+        m = MockMark()
+        Plot().plot()
+        assert m.n_splits == 0
+
+    def test_plot_split_single(self, long_df):
+
+        m = MockMark()
+        p = Plot(long_df, x="f", y="z").add(m).plot()
+        assert m.n_splits == 1
+
+        assert m.passed_keys[0] == {}
+        assert m.passed_axes[0] is p._ax
+        assert_frame_equal(m.passed_data[0], p._data.frame)
+
+    def check_splits_single_var(self, plot, mark, split_var, split_keys):
+
+        assert mark.n_splits == len(split_keys)
+        assert mark.passed_keys == [{split_var: key} for key in split_keys]
+
+        full_data = plot._data.frame
+        for i, key in enumerate(split_keys):
+
+            split_data = full_data[full_data[split_var] == key]
+            assert_frame_equal(mark.passed_data[i], split_data)
+
+    @pytest.mark.parametrize(
+        "split_var", [
+            "hue",  # explicitly declared on the Mark
+            "group",  # implicitly used for all Mark classes
+        ])
+    def test_plot_split_one_grouping_variable(self, long_df, split_var):
+
+        split_col = "a"
+
+        m = MockMark()
+        p = Plot(long_df, x="f", y="z", **{split_var: split_col}).add(m).plot()
+
+        split_keys = categorical_order(long_df[split_col])
+        assert m.passed_axes == [p._ax for _ in split_keys]
+        self.check_splits_single_var(p, m, split_var, split_keys)
+
+    def test_plot_split_across_facets_no_subgroups(self, long_df):
+
+        split_var = "col"
+        split_col = "b"
+
+        m = MockMark()
+        p = Plot(long_df, x="f", y="z", **{split_var: split_col}).add(m).plot()
+
+        split_keys = categorical_order(long_df[split_col])
+        assert m.passed_axes == list(p._figure.axes)
+        self.check_splits_single_var(p, m, split_var, split_keys)

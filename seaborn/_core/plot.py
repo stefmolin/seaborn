@@ -511,7 +511,12 @@ class Plot:
     def _scale_coords(self, df: DataFrame) -> DataFrame:
 
         coord_df = df.filter(regex="x|y")
-        out_df = df.drop(coord_df.columns, axis=1).copy(deep=False)
+        out_df = (
+            df
+            .drop(coord_df.columns, axis=1)
+            .copy(deep=False)
+            .reindex(df.columns, axis=1)  # So unscaled columns retain their place
+        )
 
         with pd.option_context("mode.use_inf_as_null", True):
             coord_df = coord_df.dropna()
@@ -524,7 +529,6 @@ class Plot:
             grouped = coord_df.groupby(axes_map, sort=False)
             for ax, ax_df in grouped:
                 self._scale_coords_single(ax_df, out_df, ax)
-
         return out_df
 
     def _scale_coords_single(
@@ -557,8 +561,14 @@ class Plot:
 
     def _unscale_coords(self, df: DataFrame) -> DataFrame:
 
+        # TODO copied from _scale_coords
         coord_df = df.filter(regex="x|y")
-        out_df = df.drop(coord_df.columns, axis=1).copy(deep=False)
+        out_df = (
+            df
+            .drop(coord_df.columns, axis=1)
+            .copy(deep=False)
+            .reindex(df.columns, axis=1)  # So unscaled columns retain their place
+        )
 
         for var, col in coord_df.items():
             axis = var[0]
@@ -611,7 +621,8 @@ class Plot:
                 try:
                     df_subset = grouped_df.get_group(pd_key)
                 except KeyError:
-                    # XXX we are adding this to allow backwards compatability
+                    # TODO (from initial work on categorical plots refactor)
+                    # we are adding this to allow backwards compatability
                     # with the empty artists that old categorical plots would
                     # add (before 0.12), which we may decide to break, in which
                     # case this option could be removed
