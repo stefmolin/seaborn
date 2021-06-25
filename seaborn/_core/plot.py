@@ -472,6 +472,8 @@ class Plot:
         self, df: DataFrame, grouping_vars: list[str], stat: Stat
     ) -> DataFrame:
 
+        stat.setup(df)
+
         # TODO how can we special-case fast aggregations? (i.e. mean, std, etc.)
         # IDEA: have Stat identify as an aggregator? (Through Mixin or attribute)
         # e.g. if stat.aggregates ...
@@ -480,15 +482,22 @@ class Plot:
         # Better to have the Stat declare when it wants that to happen
         if stat.orient not in stat_grouping_vars:
             stat_grouping_vars.append(stat.orient)
+
+        # TODO rewrite this whole thing, I think we just need to avoid groupby/apply
         df = (
             df
             .groupby(stat_grouping_vars)
             .apply(stat)
-            # TODO next because of https://github.com/pandas-dev/pandas/issues/34809
-            .drop(stat_grouping_vars, axis=1, errors="ignore")
-            .reset_index(stat_grouping_vars)
-            .reset_index(drop=True)  # TODO not always needed, can we limit?
         )
+        # TODO next because of https://github.com/pandas-dev/pandas/issues/34809
+        for var in stat_grouping_vars:
+            if var in df.index.names:
+                df = (
+                    df
+                    .drop(var, axis=1, errors="ignore")
+                    .reset_index(var)
+                    .reset_index(drop=True)  # TODO not always needed, can we limit?
+                )
         return df
 
     def _assign_axes(self, df: DataFrame) -> Axes:

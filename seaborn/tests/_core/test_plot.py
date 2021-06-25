@@ -1,4 +1,5 @@
 import functools
+import numpy as np
 import pandas as pd
 import matplotlib as mpl
 
@@ -197,6 +198,7 @@ class TestPlot:
     def test_axis_scale_numeric_as_categorical(self):
 
         p = Plot(x=[1, 2, 3]).scale_categorical("x", order=[2, 1, 3])
+
         scl = p._scales["x"]
         assert scl.type == "categorical"
         assert scl.cast(pd.Series([2, 1, 3])).cat.codes.to_list() == [0, 1, 2]
@@ -240,12 +242,86 @@ class TestPlot:
             pd.Series(dates, dtype="datetime64[ns]")
         )
 
+    def test_axis_scale_mark_data_log_transform(self, long_df):
+
+        col = "z"
+        m = MockMark()
+        Plot(long_df, x=col).scale_numeric("x", "log").add(m).plot()
+        assert_vector_equal(m.passed_data[0]["x"], long_df[col])
+
+    def test_axis_scale_mark_data_log_transfrom_with_stat(self, long_df):
+
+        class Mean(Stat):
+            def __call__(self, data):
+                return data.mean()
+
+        col = "z"
+        grouper = "a"
+        m = MockMark()
+        s = Mean()
+
+        Plot(long_df, x=grouper, y=col).scale_numeric("y", "log").add(m, s).plot()
+
+        expected = (
+            long_df[col]
+            .pipe(np.log)
+            .groupby(long_df[grouper], sort=False)
+            .mean()
+            .pipe(np.exp)
+            .reset_index(drop=True)
+        )
+        assert_vector_equal(m.passed_data[0]["y"], expected)
+
+    def test_axis_scale_mark_data_from_categorical(self, long_df):
+
+        col = "a"
+        m = MockMark()
+        Plot(long_df, x=col).add(m).plot()
+
+        levels = categorical_order(long_df[col])
+        level_map = {x: float(i) for i, x in enumerate(levels)}
+        assert_vector_equal(m.passed_data[0]["x"], long_df[col].map(level_map))
+
+    def test_axis_scale_mark_data_from_datetime(self, long_df):
+
+        col = "t"
+        m = MockMark()
+        Plot(long_df, x=col).add(m).plot()
+
+        assert_vector_equal(m.passed_data[0]["x"], long_df[col].map(mpl.dates.date2num))
+
     def test_figure_setup_creates_matplotlib_objects(self):
 
         p = Plot()
         p._setup_figure()
         assert isinstance(p._figure, mpl.figure.Figure)
         assert isinstance(p._ax, mpl.axes.Axes)
+
+    @pytest.mark.parametrize(
+        "arg,expected",
+        [("x", "x"), ("y", "y"), ("v", "x"), ("h", "y")],
+    )
+    def test_orient(self, arg, expected):
+
+        class MockMarkTrackOrient(MockMark):
+            def _adjust(self, data):
+                self.orient_at_adjust = self.orient
+                return data
+
+        class MockStatTrackOrient(MockStat):
+            def setup(self, data):
+                super().setup(data)
+                self.orient_at_setup = self.orient
+                return self
+
+        m = MockMarkTrackOrient()
+        s = MockStatTrackOrient()
+        Plot(x=[1, 2, 3], y=[1, 2, 3]).add(m, s, orient=arg).plot()
+
+        assert m.orient == expected
+        assert m.orient_at_adjust == expected
+        assert s.orient == expected
+        assert s.orient_at_setup == expected
 
     def test_empty_plot(self):
 
@@ -301,3 +377,30 @@ class TestPlot:
         split_keys = categorical_order(long_df[split_col])
         assert m.passed_axes == list(p._figure.axes)
         self.check_splits_single_var(p, m, split_var, split_keys)
+
+    def test_plot_adjustments(self, long_df):
+
+        orig_df = long_df.copy(deep=True)
+
+        class AdjustableMockMark(MockMark):
+            def _adjust(self, data):
+                data["x"] = data["x"] + 1
+                return data
+
+        m = AdjustableMockMark()
+        Plot(long_df, x="z", y="z").add(m).plot()
+        assert_vector_equal(m.passed_data[0]["x"], long_df["z"] + 1)
+        assert_vector_equal(m.passed_data[0]["y"], long_df["z"])
+
+        assert_frame_equal(long_df, orig_df)   # Test data was not mutated
+
+    def test_plot_adjustments_log_scale(self, long_df):
+
+        class AdjustableMockMark(MockMark):
+            def _adjust(self, data):
+                data["x"] = data["x"] - 1
+                return data
+
+        m = AdjustableMockMark()
+        Plot(long_df, x="z", y="z").scale_numeric("x", "log").add(m).plot()
+        assert_vector_equal(m.passed_data[0]["x"], long_df["z"] / 10)
