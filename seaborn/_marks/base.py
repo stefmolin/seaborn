@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from typing import Optional, Literal, Any
+    from typing import Literal, Any, Type
     from collections.abc import Generator
     from pandas import DataFrame
     from matplotlib.axes import Axes
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 class Mark:
     """Base class for objects that control the actual plotting."""
     # TODO where to define vars we always group by (col, row, group)
-    default_stat: Optional[Stat] = None
+    default_stat: Type[Stat] | None = None
     grouping_vars: list[str] = []
     orient: Literal["x", "y"]
     requires: list[str]  # List of variabes that must be defined
